@@ -7,7 +7,7 @@
 #define ITERATION_NUM 100000
 #define PARENTS_CROSSOVER_NUM 6
 //t:table   s:solution
-int num_color=5;
+int num_color=50;
 int num_node=0;
 int num_edge=0;
 int **t_adjacent_half=NULL;//记录节点的比自身序号小的邻边
@@ -25,7 +25,9 @@ int **t_tabu_tenure=NULL;
 
 //char *filename_in="../../Instances/mytest_4.col";
 //char *filename_in="../../Instances/mytest_10.col";
-char *filename_in="../../Instances/dsjc125.1.col";
+//char *filename_in="../../Instances/dsjc125.1.col";
+//char *filename_in="../../Instances/dsjc125.9.col";
+char *filename_in="../../Instances/dsjc500.5.col";
 char *filename_out="out.txt";
 /***********************************************/
 //读取图信息，得到邻结点表
@@ -138,7 +140,7 @@ void tabu_search(int *solution,int *conflict_num)
     int delta_nontabu=0;
     int delta_tabu=0;
     int temp_delta;
-    int best_conflict=num_node;
+    int best_conflict=num_node*num_node;
     int *best_solution=(int *)malloc(sizeof(int)*num_node);
     //初始化变量
     for(i=0;i<num_node;i++){
@@ -163,6 +165,7 @@ void tabu_search(int *solution,int *conflict_num)
     }
     curr_conflict_num/=2;
     //TS algorithm  i迭代次数,j结点,m颜色
+    //for(i=0;1;i++){
     for(i=0;i<ITERATION_NUM;i++){
         delta_nontabu=num_node;
         delta_tabu=num_node;
@@ -180,8 +183,11 @@ void tabu_search(int *solution,int *conflict_num)
                     temp_delta=t_conflict_table[temp_node][color_after]-t_conflict_table[temp_node][color_before];
                     //对禁忌与非禁忌的情况分别处理并记录
                     if(t_tabu_tenure[temp_node][color_after]<i){
-                        if(delta_nontabu<temp_delta){
-                            continue;
+                        if(temp_delta<delta_nontabu){
+                            record_nontabu[0]=temp_node;
+                            record_nontabu[1]=color_after;
+                            choice_num_nontabu=1;
+                            delta_nontabu=temp_delta;
                         }
                         else{
                             if(delta_nontabu==temp_delta){
@@ -191,30 +197,21 @@ void tabu_search(int *solution,int *conflict_num)
                                     record_nontabu[1]=color_after;
                                 }
                             }
-                            else{
-                                record_nontabu[0]=temp_node;
-                                record_nontabu[1]=color_after;
-                                choice_num_nontabu=1;
-                            }
                         }
                     }
                     else{
-                        if(delta_nontabu>temp_delta&&((best_conflict>=curr_conflict_num+temp_delta)||0==choice_num_nontabu)){
-                            if(delta_tabu<temp_delta){
-                                continue;
-                            }
-                            else{
-                                if(delta_tabu==temp_delta){
-                                    choice_num_tabu++;
-                                    if(0==rand()%choice_num_tabu){
-                                        record_tabu[0]=temp_node;
-                                        record_tabu[1]=color_after;
-                                    }
-                                }
-                                else{
+                        if(temp_delta<delta_tabu){
+                            record_tabu[0]=temp_node;
+                            record_tabu[1]=color_after;
+                            choice_num_tabu=1;
+                            delta_tabu=temp_delta;
+                        }
+                        else{
+                            if(delta_tabu==temp_delta){
+                                choice_num_tabu++;
+                                if(0==rand()%choice_num_tabu){
                                     record_tabu[0]=temp_node;
                                     record_tabu[1]=color_after;
-                                    choice_num_tabu=1;
                                 }
                             }
                         }
@@ -223,26 +220,19 @@ void tabu_search(int *solution,int *conflict_num)
             }
         }
         //选择好的移动方法，进行移动
-        if(0==choice_num_nontabu){
+        if((curr_conflict_num+delta_tabu<best_conflict && delta_tabu<delta_nontabu)||(choice_num_nontabu==0)){
             temp_node=record_tabu[0];
-            color_before=solution[temp_node];
             color_after=record_tabu[1];
+            temp_delta=delta_tabu;
         }
         else{
-            if(delta_tabu<delta_nontabu&&(delta_tabu+curr_conflict_num)<=best_conflict){
-                temp_node=record_tabu[0];
-                color_before=solution[temp_node];
-                color_after=record_tabu[1];
-            }
-            else{
-                temp_node=record_nontabu[0];
-                color_before=solution[temp_node];
-                color_after=record_nontabu[1];
-            }
+            temp_node=record_nontabu[0];
+            color_after=record_nontabu[1];
+            temp_delta=delta_nontabu;
         }
+        color_before=solution[temp_node];
         solution[temp_node]=color_after;
-        curr_conflict_num-=t_conflict_table[temp_node][color_before];
-        curr_conflict_num+=t_conflict_table[temp_node][color_after];
+        curr_conflict_num+=temp_delta;
         for(m=0;m<t_adjacent_all[temp_node][0];m++){
             //curr_conflict_num-=t_conflict_table[t_adjacent_all[temp_node][m+1]][solution[t_adjacent_all[temp_node][m+1]]];
             t_conflict_table[t_adjacent_all[temp_node][m+1]][color_before]--;
@@ -250,11 +240,12 @@ void tabu_search(int *solution,int *conflict_num)
             //curr_conflict_num+=t_conflict_table[t_adjacent_all[temp_node][m+1]][solution[t_adjacent_all[temp_node][m+1]]];
         }
         t_tabu_tenure[temp_node][color_before]=i+curr_conflict_num+rand()%10;
-        if(curr_conflict_num<=best_conflict){
+        if(curr_conflict_num<best_conflict){
             for(m=0;m<num_node;m++){
                 best_solution[m]=solution[m];
             }
             best_conflict=curr_conflict_num;
+            printf("iter=%d:Best_f=%d\n",i,best_conflict);
         }
         if(best_conflict==0){
             break;
