@@ -5,14 +5,16 @@
 
 #define POPULATION_SIZE 10
 #define ITERATION_NUM 100000
+#define PARENTS_CROSSOVER_NUM 6
 //t:table   s:solution
-int num_color=100;
+int num_color=5;
 int num_node=0;
 int num_edge=0;
 int **t_adjacent_half=NULL;//记录节点的比自身序号小的邻边
 int **t_adjacent_all=NULL;//记录节点的所有邻边
 int **t_population[POPULATION_SIZE];
 int *l_s_best=NULL;
+int i_conflict_best;
 int *l_conflict_num=NULL;//长度为population_size+1，最后一个位置存子代冲突数
 int **t_distance=NULL;//个体间距离表
 int *l_min_distance=NULL;//个体与其它个体最小距离列表
@@ -20,6 +22,11 @@ int *l_min_distance=NULL;//个体与其它个体最小距离列表
 int *l_s_curr=NULL;
 int **t_conflict_table=NULL;
 int **t_tabu_tenure=NULL;
+
+//char *filename_in="../../Instances/mytest_4.col";
+//char *filename_in="../../Instances/mytest_10.col";
+char *filename_in="../../Instances/dsjc125.1.col";
+char *filename_out="out.txt";
 /***********************************************/
 //读取图信息，得到邻结点表
 void read_file(void)
@@ -33,7 +40,7 @@ void read_file(void)
     char *cs_temp=NULL;
     char *cs_line=(char *)malloc(sizeof(char)*d_line_longth);
     FILE *f_instance=NULL;
-    if(NULL=(f_instance=fopen(filename,"r"))){
+    if(NULL==(f_instance=fopen(filename_in,"r"))){
         printf("read file error!");
         exit(-1);
     }
@@ -86,7 +93,7 @@ void read_file(void)
         t_adjacent_half[j][i+1]=is_list_adjacents[i+1];
     }
     fclose(f_instance);
-    if(num_node!=j){
+    if(num_node!=j+1){
         printf("j<num_node,the graph may be wrong!");
         exit(-1);
     }
@@ -111,6 +118,152 @@ void read_file(void)
             t_adjacent_all[t_adjacent_half[i][j+1]][0]++;
             t_adjacent_all[t_adjacent_half[i][j+1]][t_adjacent_all[t_adjacent_half[i][j+1]][0]]=i;
         }
+    }
+}
+//禁忌搜索，传入解及冲突数返回优化后的解及冲突数
+void tabu_search(int *solution,int *conflict_num)
+{
+    int i;
+    int j;
+    int m;
+    int temp_node;
+    int temp_color;
+    int color_before;
+    int color_after;
+    int record_nontabu[2];//结点，变化后的颜色
+    int record_tabu[2];
+    int choice_num_tabu;
+    int choice_num_nontabu;
+    int curr_conflict_num=0;
+    int delta_nontabu=0;
+    int delta_tabu=0;
+    int temp_delta;
+    int best_conflict=num_node;
+    int *best_solution=(int *)malloc(sizeof(int)*num_node);
+    //初始化变量
+    for(i=0;i<num_node;i++){
+        best_solution[i]=solution[i];
+        for(j=0;j<num_color;j++){
+            t_conflict_table[i][j]=0;
+            t_tabu_tenure[i][j]=0;
+        }
+    }
+    //构建冲突表
+    for(i=0;i<num_node;i++){
+        for(j=0;j<t_adjacent_all[i][0];j++){
+            temp_node=t_adjacent_all[i][j+1];
+            temp_color=solution[i];
+            t_conflict_table[temp_node][temp_color]++;
+        }
+    }
+    for(i=0;i<num_node;i++){
+        temp_node=i;
+        temp_color=solution[temp_node];
+        curr_conflict_num+=t_conflict_table[temp_node][temp_color];//是实际冲突数的两倍
+    }
+    curr_conflict_num/=2;
+    //TS algorithm  i迭代次数,j结点,m颜色
+    for(i=0;i<ITERATION_NUM;i++){
+        delta_nontabu=num_node;
+        delta_tabu=num_node;
+        choice_num_tabu=0;
+        choice_num_nontabu=0;
+        //探索领域解
+        for(j=0;j<num_node;j++){
+            //只考虑有冲突的结点
+            temp_node=j;
+            temp_color=solution[temp_node];
+            if(0<t_conflict_table[temp_node][temp_color]){
+                for(m=1;m<num_color;m++){
+                    color_before=temp_color;
+                    color_after=(temp_color+m)%num_color;
+                    temp_delta=t_conflict_table[temp_node][color_after]-t_conflict_table[temp_node][color_before];
+                    //对禁忌与非禁忌的情况分别处理并记录
+                    if(t_tabu_tenure[temp_node][color_after]<i){
+                        if(delta_nontabu<temp_delta){
+                            continue;
+                        }
+                        else{
+                            if(delta_nontabu==temp_delta){
+                                choice_num_nontabu++;
+                                if(0==rand()%choice_num_nontabu){
+                                    record_nontabu[0]=temp_node;
+                                    record_nontabu[1]=color_after;
+                                }
+                            }
+                            else{
+                                record_nontabu[0]=temp_node;
+                                record_nontabu[1]=color_after;
+                                choice_num_nontabu=1;
+                            }
+                        }
+                    }
+                    else{
+                        if(delta_nontabu>temp_delta&&((best_conflict>=curr_conflict_num+temp_delta)||0==choice_num_nontabu)){
+                            if(delta_tabu<temp_delta){
+                                continue;
+                            }
+                            else{
+                                if(delta_tabu==temp_delta){
+                                    choice_num_tabu++;
+                                    if(0==rand()%choice_num_tabu){
+                                        record_tabu[0]=temp_node;
+                                        record_tabu[1]=color_after;
+                                    }
+                                }
+                                else{
+                                    record_tabu[0]=temp_node;
+                                    record_tabu[1]=color_after;
+                                    choice_num_tabu=1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        //选择好的移动方法，进行移动
+        if(0==choice_num_nontabu){
+            temp_node=record_tabu[0];
+            color_before=solution[temp_node];
+            color_after=record_tabu[1];
+        }
+        else{
+            if(delta_tabu<delta_nontabu&&(delta_tabu+curr_conflict_num)<=best_conflict){
+                temp_node=record_tabu[0];
+                color_before=solution[temp_node];
+                color_after=record_tabu[1];
+            }
+            else{
+                temp_node=record_nontabu[0];
+                color_before=solution[temp_node];
+                color_after=record_nontabu[1];
+            }
+        }
+        solution[temp_node]=color_after;
+        curr_conflict_num-=t_conflict_table[temp_node][color_before];
+        curr_conflict_num+=t_conflict_table[temp_node][color_after];
+        for(m=0;m<t_adjacent_all[temp_node][0];m++){
+            //curr_conflict_num-=t_conflict_table[t_adjacent_all[temp_node][m+1]][solution[t_adjacent_all[temp_node][m+1]]];
+            t_conflict_table[t_adjacent_all[temp_node][m+1]][color_before]--;
+            t_conflict_table[t_adjacent_all[temp_node][m+1]][color_after]++;
+            //curr_conflict_num+=t_conflict_table[t_adjacent_all[temp_node][m+1]][solution[t_adjacent_all[temp_node][m+1]]];
+        }
+        t_tabu_tenure[temp_node][color_before]=i+curr_conflict_num+rand()%10;
+        if(curr_conflict_num<=best_conflict){
+            for(m=0;m<num_node;m++){
+                best_solution[m]=solution[m];
+            }
+            best_conflict=curr_conflict_num;
+        }
+        if(best_conflict==0){
+            break;
+        }
+    }
+    //返回优化的解
+    *conflict_num=best_conflict;
+    for(i=0;i<num_node;i++){
+        solution[i]=best_solution[i];
     }
 }
 //初始化种群，记录最优个体
@@ -153,164 +306,30 @@ void initial_populaion(void)
             t_population[i][l_s_curr[j]][0]++;
             t_population[i][l_s_curr[j]][t_population[i][l_s_curr[j]][0]]=j;
         }
-        if(record>l_conflict_num[i]){
+        if(record[1]>l_conflict_num[i]){
             record[0]=i;
             record[1]=l_conflict_num[i];
         }
     }
     //记录最优解
+    i_conflict_best=record[1];
     for(i=0;i<num_color;i++){
         for(j=0;j<t_population[record[0]][i][0];j++){
             l_s_best[t_population[record[0]][i][j+1]]=i;
         }
     }
-    //初始化距离表
-    int *classes_one=(int *)malloc(sizeof(int)*num_color);
-    int *classes_two=(int *)malloc(sizeof(int)*num_color);
-    int **match_table=
-    for(i=0;i<POPULATION_SIZE-1;i++){
-        for(j=i;j<POPULATION_SIZE;j++){
-
-        }
-    }
+//    //初始化距离表
+//    int *classes_one=(int *)malloc(sizeof(int)*num_color);
+//    int *classes_two=(int *)malloc(sizeof(int)*num_color);
+//    int **match_table;
+//    for(i=0;i<POPULATION_SIZE-1;i++){
+//        for(j=i;j<POPULATION_SIZE;j++){
+//
+//        }
+//    }
 }
-//禁忌搜索，传入解及冲突数返回优化后的解及冲突数
-void tabu_search(int *solution,int &conflice_num)
-{
-    int i;
-    int j;
-    int m;
-    int color_before;
-    int color_after;
-    int record_nontabu[2];//结点，变化后的颜色
-    int record_tabu[2];
-    int choice_num_tabu;
-    int choice_num_nontabu;
-    int curr_conflict_num=0;
-    int delta_nontabu=0;
-    int delta_tabu=0;
-    int temp_delta;
-    int best_conflict=num_node;
-    int *best_solution=(int *)malloc(sizeof(int)*num_node);
-    //初始化变量
-    for(i=0;i<num_node;i++){
-        best_solution[i]=solution[i];
-        for(j=0;j<num_color;j++){
-            t_conflict_table[i][j]=0;
-            t_tabu_tenure[i][j]=0;
-        }
-    }
-    //构建冲突表
-    for(i=0;i<num_node;i++){
-        for(j=0;j<t_adjacent_half[i][0];j++){
-            if(solution[i]==solution[t_adjacent_half[i][j+1]]){
-                t_conflict_table[i][solution[i]]++;
-                t_conflict_table[t_adjacent_half[i][j+1]][solution[t_adjacent_half[i][j+1]]]++;
-                curr_conflict_num++;
-            }
-        }
-    }
-    //TS algorithm  i迭代次数,j结点,m颜色
-    for(i=0;i<ITERATION_NUM;i++){
-        delta_nontabu=num_node;
-        delta_tabu=num_node;
-        choice_num_tabu=0;
-        choice_num_nontabu=0;
-        //探索领域解
-        for(j=0;j<num_node;j++){
-            //只考虑有冲突的结点
-            if(0<t_conflict_table[j][solution[j]){
-                for(m=1;m<num_color;m++){
-                    color_before=solution[j];
-                    color_after=(solution[j]+m)%num_color;
-                    temp_delta=t_conflict_table[j][color_before]-t_conflict_table[j][color_after];
-                    //对禁忌与非禁忌的情况分别处理并记录
-                    if(t_tabu_tenure[j][color_after]<i){
-                        if(delta_nontabu<temp_delta){
-                            continue;
-                        }
-                        else{
-                            if(delta_nontabu==temp_delta){
-                                choice_num_nontabu++;
-                                if(0==rand()%choice_num_nontabu){
-                                    record_nontabu[0]=j;
-                                    record_nontabu[1]=color_after;
-                                }
-                            }
-                            else{
-                                record_nontabu[0]=j;
-                                record_nontabu[1]=color_after;
-                                choice_num_nontabu=1;
-                            }
-                        }
-                    }
-                    else{
-                        if(delta_nontabu>temp_delta&&((best_conflict>=curr_conflict_num+temp_delta)||0==choice_num_nontabu)){
-                            if(delta_tabu<temp_delta){
-                                continue;
-                            }
-                            else{
-                                if(delta_tabu==temp_delta){
-                                    choice_num_tabu++;
-                                    if(0==rand()%choice_num_tabu){
-                                        record_tabu[0]=j;
-                                        record_tabu[1]=color_after;
-                                    }
-                                }
-                                else{
-                                    record_tabu[0]=j;
-                                    record_tabu[1]=color_after;
-                                    choice_num_tabu=1;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        //选择好的移动方法，进行移动
-        if(0==choice_num_nontabu){
-            j=record_tabu[0];
-            color_before=solution[j];
-            color_after=record_tabu[1];
-        }
-        else{
-            if(delta_tabu<delta_nontabu&&(delta_tabu+curr_conflict_num)<=best_conflict){
-                j=record_tabu[0];
-                color_before=solution[j];
-                color_after=record_tabu[1];
-            }
-            else{
-                j=record_nontabu[0];
-                color_before=solution[j];
-                color_after=record_nontabu[1];
-            }
-        }
-        solution[j]=color_after;
-        curr_conflict_num-=t_conflict_table[j][color_before];
-        curr_conflict_num+=t_conflict_table[j][color_after];
-        for(m=0;m<t_adjacent_all[j][0];m++){
-            curr_conflict_num-=t_conflict_table[t_adjacent_all[j][m+1]][solution[t_adjacent_all[j][m+1]]];
-            t_conflict_table[t_adjacent_all[j][m+1]][color_before]--;
-            t_conflict_table[t_adjacent_all[j][m+1]][color_after]++;
-            curr_conflict_num+=t_conflict_table[t_adjacent_all[j][m+1]][solution[t_adjacent_all[j][m+1]]];
-        }
-        t_tabu_tenure[j][color_before]=i+curr_conflict_num+rand()%10;
-        if(curr_conflict_num<=best_conflict){
-            for(m=0;m<num_node;m++){
-                best_solution[i]=solution[i];
-            }
-            best_conflict=curr_conflict_num;
-        }
-    }
-    //返回优化的解
-    *conflice_num=best_conflict;
-    for(i=0;i<num_node;i++){
-        solution[i]=best_solution[i];
-    }
-}
-//动态多父本交叉算子。传入种群、参与交叉的父本数、对应有父本序号、返回的子代的解。
-void adaptive_multi_parent_crossover(int ***population,int parent_num,int *parents,int *child)
+//动态多父本交叉算子。传入种群、参与交叉的父本数、对应的父本序号
+void adaptive_multi_parent_crossover(int ***population,int parent_num,int *parents)
 {
     int i;
     int j;
@@ -393,28 +412,51 @@ void adaptive_multi_parent_crossover(int ***population,int parent_num,int *paren
             }
         }
     }
-    //返回结果
+    //子代优化
+    tabu_search(solution_child,&l_conflict_num[POPULATION_SIZE]);
+    //更新种群。先用最简单的方法，根据目标函数大小，用子代替换较差的父本
+    temp_parent=parents[0];
+    m=l_conflict_num[temp_parent];
+    for(i=1;i<parent_num;i++){
+        if(m<l_conflict_num[parents[i]]){
+            temp_parent=parents[i];
+            m=l_conflict_num[temp_parent];
+        }
+    }
+    l_conflict_num[temp_parent]=l_conflict_num[POPULATION_SIZE];
+    for(i=0;i<num_color;i++){
+        population[temp_parent][i][0]=0;
+    }
     for(i=0;i<num_node;i++){
-        child[i]=solution_child[i];
+        temp_color=solution_child[i];
+        population[temp_parent][temp_color][0]++;
+        temp_node=population[temp_parent][temp_color][0];
+        population[temp_parent][temp_color][temp_node]=i;
+    }
+    //更新最优解
+    if(i_conflict_best>=l_conflict_num[POPULATION_SIZE]){
+        i_conflict_best=l_conflict_num[POPULATION_SIZE];
+        for(i=0;i<num_node;i++){
+            l_s_best[i]=solution_child[i];
+        }
     }
 }
-//更新种群。先用最简单的方法，根据目标函数大小，用子代替换较差的父本
-void pool_updating()
-{
-}
+//void pool_updating()
+//{
+//}
 //记录结果
-void write_file(int *solution)
+void write_file(void)
 {
     FILE *f_solution=NULL;
     int i;
-    if((f_solution=fopen("out.txt","w"))==NULL){
+    if((f_solution=fopen(filename_out,"w"))==NULL){
         printf("fopen out error!");
         exit(-1);
     }
     for(i=0;i<num_node;i++){
         fprintf(f_solution,"%d ",l_s_best[i]);
     }
-    fclose(out);
+    fclose(f_solution);
     printf("write answer\n");
 }
 //对解进行检查，输入解，输出结果
@@ -423,11 +465,11 @@ void check_answer(int *solution)
     int i;
     int j;
     int flag=1;
-    printf("check:\n");
+    printf("check:");
     for(i=0;i<num_node;i++){
         for(j=0;j<t_adjacent_half[i][0];j++){
             if(solution[i]==solution[t_adjacent_half[i][j+1]]){
-                printf("%d,%d should not have the same color!\n");
+                printf("%d,%d should not have the same color!\n",i,t_adjacent_half[i][j+1]);
                 flag=0;
             }
         }
@@ -439,13 +481,21 @@ void check_answer(int *solution)
 /***********************************************/
 int main()
 {
-    int i;
+    int parent_num=2;
+    int parents[PARENTS_CROSSOVER_NUM];
 
     read_file();
     initial_populaion();
     while(1){
-        if()
+        if(i_conflict_best==0){
+            break;
+        }
+        parents[0]=rand()%POPULATION_SIZE;
+        parents[1]=(rand()%(POPULATION_SIZE-1)+1+parents[0])%POPULATION_SIZE;
+        adaptive_multi_parent_crossover(t_population,parent_num,parents);
     }
+    check_answer(l_s_best);
+    write_file();
 
     return 0;
 }
