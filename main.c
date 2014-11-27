@@ -7,7 +7,7 @@
 #define ITERATION_NUM 100000
 #define PARENTS_CROSSOVER_NUM 6
 //t:table   s:solution
-int num_color=50;
+int num_color=48;
 int num_node=0;
 int num_edge=0;
 int **t_adjacent_half=NULL;//记录节点的比自身序号小的邻边
@@ -245,7 +245,7 @@ void tabu_search(int *solution,int *conflict_num)
                 best_solution[m]=solution[m];
             }
             best_conflict=curr_conflict_num;
-            printf("iter=%d:Best_f=%d\n",i,best_conflict);
+            //printf("iter=%d:Best_f=%d\n",i,best_conflict);
         }
         if(best_conflict==0){
             break;
@@ -339,7 +339,7 @@ void adaptive_multi_parent_crossover(int ***population,int parent_num,int *paren
     int parents_tabu_table[parent_num];
     for(i=0;i<parent_num;i++){
         max_classes[i][0]=0;
-        parents_tabu_table[i]=0;
+        parents_tabu_table[i]=-1;
         solution_parents[i]=(int *)malloc(sizeof(int)*num_node);
         solution_parents_node_position[i]=(int *)malloc(sizeof(int)*num_node);
     }
@@ -432,11 +432,12 @@ void adaptive_multi_parent_crossover(int ***population,int parent_num,int *paren
         population[temp_parent][temp_color][temp_node]=i;
     }
     //更新最优解
-    if(i_conflict_best>=l_conflict_num[POPULATION_SIZE]){
+    if(i_conflict_best>l_conflict_num[POPULATION_SIZE]){
         i_conflict_best=l_conflict_num[POPULATION_SIZE];
         for(i=0;i<num_node;i++){
             l_s_best[i]=solution_child[i];
         }
+        printf("best_conflict=%d\n",i_conflict_best);
     }
 }
 //void pool_updating()
@@ -452,7 +453,7 @@ void write_file(void)
         exit(-1);
     }
     for(i=0;i<num_node;i++){
-        fprintf(f_solution,"%d ",l_s_best[i]);
+        fprintf(f_solution,"%d %d\n",i+1,l_s_best[i]);
     }
     fclose(f_solution);
     printf("write answer\n");
