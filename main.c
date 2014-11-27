@@ -330,15 +330,16 @@ void adaptive_multi_parent_crossover(int ***population,int parent_num,int *paren
     int temp_parent;
     int temp_node;
     int temp_color;
+    int temp_node_num;
     int **population_parents[parent_num];//新建空间存储父本种群
     int *solution_child=(int *)malloc(sizeof(int)*num_node);//产生的子代
     int *solution_parents[parent_num];//父本对应的一维解集
     int *solution_parents_node_position[parent_num];//父本对应的一维解集的结点在二维中的位置
     int max_classes[parent_num][2];//结点数，对应class
+    int parents_tabu_table[parent_num];
     for(i=0;i<parent_num;i++){
         max_classes[i][0]=0;
-    }
-    for(i=0;i<parent_num;i++){
+        parents_tabu_table[i]=0;
         solution_parents[i]=(int *)malloc(sizeof(int)*num_node);
         solution_parents_node_position[i]=(int *)malloc(sizeof(int)*num_node);
     }
@@ -346,43 +347,48 @@ void adaptive_multi_parent_crossover(int ***population,int parent_num,int *paren
         population_parents[i]=(int **)malloc(sizeof(int *)*num_color);
         for(j=0;j<num_color;j++){
             population_parents[i][j]=(int *)malloc(sizeof(int)*num_node);
-            population_parents[i][j][0]=population[parents[i]][j][0];
-            for(m=0;m<population[parents[i]][j][0];m++){
-                population_parents[i][j][m+1]=population[parents[i]][j][m+1];
-                solution_parents[i][population[parents[i]][j][m+1]]=j;
-                solution_parents_node_position[i][population[parents[i]][j][m+1]]=m+1;
+            temp_parent=parents[i];
+            temp_node_num=population[temp_parent][j][0];
+            population_parents[i][j][0]=temp_node_num;
+            for(m=0;m<temp_node_num;m++){
+                temp_node=population[temp_parent][j][m+1];
+                population_parents[i][j][m+1]=temp_node;
+                solution_parents[i][temp_node]=j;
+                solution_parents_node_position[i][temp_node]=m+1;
             }
-            if(max_classes[i][0]<population[parents[i]][j][0]){
-                max_classes[i][0]=population[parents[i]][j][0];
+            if(max_classes[i][0]<population[temp_parent][j][0]){
+                max_classes[i][0]=population[temp_parent][j][0];
                 max_classes[i][1]=j;
             }
         }
     }
-    //交叉算子
+    //交叉算子.i:color
     for(i=0;i<num_color;i++){
         //找到最大子集
-        m=max_classes[0][0];
-        temp_parent_num=0;
-        for(j=1;j<parent_num;j++){
-            if(m<max_classes[j][0]){
+        m=-1;
+        //temp_parent_num=0;
+        for(j=0;j<parent_num;j++){
+            if(m<max_classes[j][0]&&i>parents_tabu_table[j]){
                 m=max_classes[j][0];
                 temp_parent_num=j;
             }
         }
         //将子集复制到子代中,去除父本中用过的结点.
-        for(j=0;j<population_parents[parents[temp_parent_num]][max_classes[temp_parent_num][1]][0];j++){
-            temp_node=population_parents[parents[temp_parent_num]][max_classes[temp_parent_num][1]][j+1];
+        for(j=0;j<population_parents[temp_parent_num][max_classes[temp_parent_num][1]][0];j++){
+            temp_node=population_parents[temp_parent_num][max_classes[temp_parent_num][1]][j+1];
             solution_child[temp_node]=i;
+            //对其它父本进行处理，移除该结点
             for(m=1;m<parent_num;m++){
                 temp_parent=(temp_parent_num+m)%parent_num;
                 temp_color=solution_parents[temp_parent][temp_node];
                 for(n=solution_parents_node_position[temp_parent][temp_node];n<population_parents[temp_parent][temp_color][0];n++){
                     population_parents[temp_parent][temp_color][n]=population_parents[temp_parent][temp_color][n+1];
+                    solution_parents_node_position[temp_parent][population_parents[temp_parent][temp_color][n+1]]--;
                 }
                 population_parents[temp_parent][temp_color][0]--;
             }
         }
-        population_parents[parents[temp_parent_num]][max_classes[temp_parent_num][1]][0]=0;
+        population_parents[temp_parent_num][max_classes[temp_parent_num][1]][0]=0;
         //更新辅助记录信息
         for(j=0;j<parent_num;j++){
             max_classes[j][0]=population_parents[j][0][0];
@@ -394,6 +400,7 @@ void adaptive_multi_parent_crossover(int ***population,int parent_num,int *paren
                 }
             }
         }
+        parents_tabu_table[temp_parent_num]=i+parent_num/2;
     }
     //剩余结点随机分配
     if(max_classes[0][0]>0){
