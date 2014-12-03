@@ -4,11 +4,11 @@
 #include <time.h>
 
 #define ITERATION_NUM 8000
-#define TEST_NUM 1
+#define TEST_NUM 30
 #define BIG_CICLE_NUM 10 //大的周期数
 #define PARENTS_NUM 2
 /***********************************************/
-#define THE_CHOICE 1
+#define THE_CHOICE 5
 int colors[]={5,17,44,8,28,72,12,50,49,48};
 char *instances[]={"dsjc125.1.col",//0_5
                    "dsjc125.5.col",//1_17
@@ -186,8 +186,8 @@ void tabu_search(int *solution,int *conflict_num)
     int temp_color;
     int color_before;
     int color_after;
-    int record_nontabu[2];//结点，变化后的颜色
-    int record_tabu[2];
+    int record_nontabu[2]={-1,-1};//结点，变化后的颜色
+    int record_tabu[2]={-1,-1};
     int choice_num_tabu;
     int choice_num_nontabu;
     int curr_conflict_num=0;
@@ -308,16 +308,7 @@ void tabu_search(int *solution,int *conflict_num)
         solution[i]=best_solution[i];
     }
 }
-//ceshi
-void ceshi(int *solution)
-{
-    int i;
-    for(i=0;i<num_node;i++){
-        printf("%d ",solution[i]);
-    }
-    printf("\n");
-}
-//
+//不同类型解之间的复制
 void copy_solution_oneTotwo(int **solution,int *new_solution){
     int i;
     int node;
@@ -372,6 +363,7 @@ void initial_populaion(void)
             parents[i][j][0]=0;
         }
     }
+    history_solution=(int *)malloc(sizeof(int)*num_node);
     best_solution=(int *)malloc(sizeof(int)*num_node);
     t_conflict_table=(int **)malloc(sizeof(int *)*num_node);
     t_tabu_tenure=(int **)malloc(sizeof(int *)*num_node);
@@ -399,6 +391,8 @@ void initial_populaion(void)
     //记录最优解
     copy_solution_twoToone(best_solution,parents[record[0]]);
     best_conflict=parents_conflict[record[0]];
+    copy_solution_twoToone(history_solution,parents[record[0]]);
+    history_conflict=parents_conflict[record[0]];
 }
 //返回包含结点数最多的颜色号
 int max_class(int **solution)
@@ -426,11 +420,16 @@ void crossover(int ***population_parents,int main_parent,int *solution_child)
     int temp_color;
     int temp_position;
     int choosed_parent;
+    int **temp_population[PARENTS_NUM];
     int *solution_parents[PARENTS_NUM];//父本对应的一维解集
     int *node_positionInpopulation_parents[PARENTS_NUM];//父本对应的一维解集的结点在二维中的位置
     int bigest_class;//最多结点数对应class
     //初始化辅助信息变量
     for(i=0;i<PARENTS_NUM;i++){
+        temp_population[i]=(int **)malloc(sizeof(int *)*num_color);
+        for(j=0;j<num_color;j++){
+            temp_population[i][j]=(int *)malloc(sizeof(int)*num_node);
+        }
         solution_parents[i]=(int *)malloc(sizeof(int)*num_node);
         node_positionInpopulation_parents[i]=(int *)malloc(sizeof(int)*num_node);
     }
@@ -438,46 +437,48 @@ void crossover(int ***population_parents,int main_parent,int *solution_child)
         temp_parent=i;
         for(j=0;j<num_color;j++){
             temp_color=j;
+            temp_population[temp_parent][temp_color][0]=population_parents[temp_parent][temp_color][0];
             for(m=0;m<population_parents[temp_parent][temp_color][0];m++){
                 temp_position=m+1;
                 temp_node=population_parents[temp_parent][temp_color][temp_position];
+                temp_population[temp_parent][temp_color][temp_position]=population_parents[temp_parent][temp_color][temp_position];
                 solution_parents[temp_parent][temp_node]=temp_color;
                 node_positionInpopulation_parents[temp_parent][temp_node]=temp_position;
             }
         }
     }
     choosed_parent=main_parent;
-    bigest_class=max_class(population_parents[choosed_parent]);//找到最大子集
+    bigest_class=max_class(temp_population[choosed_parent]);//找到最大子集
     //交叉算子
     for(i=0;i<num_color;i++){
         //将子集复制到子代中,去除父本中用过的结点.
-        for(j=0;j<population_parents[choosed_parent][bigest_class][0];j++){
+        for(j=0;j<temp_population[choosed_parent][bigest_class][0];j++){
             temp_position=j+1;
-            temp_node=population_parents[choosed_parent][bigest_class][temp_position];
+            temp_node=temp_population[choosed_parent][bigest_class][temp_position];
             solution_child[temp_node]=i;
             //对其它父本进行处理，移除该结点
             for(m=1;m<PARENTS_NUM;m++){
                 temp_parent=(choosed_parent+m)%PARENTS_NUM;
                 temp_color=solution_parents[temp_parent][temp_node];
-                for(n=node_positionInpopulation_parents[temp_parent][temp_node];n<population_parents[temp_parent][temp_color][0];n++){
-                    population_parents[temp_parent][temp_color][n]=population_parents[temp_parent][temp_color][n+1];
-                    node_positionInpopulation_parents[temp_parent][population_parents[temp_parent][temp_color][n+1]]--;
+                for(n=node_positionInpopulation_parents[temp_parent][temp_node];n<temp_population[temp_parent][temp_color][0];n++){
+                    temp_population[temp_parent][temp_color][n]=temp_population[temp_parent][temp_color][n+1];
+                    node_positionInpopulation_parents[temp_parent][temp_population[temp_parent][temp_color][n+1]]--;
                 }
-                population_parents[temp_parent][temp_color][0]--;
+                temp_population[temp_parent][temp_color][0]--;
             }
         }
-        population_parents[choosed_parent][bigest_class][0]=0;
+        temp_population[choosed_parent][bigest_class][0]=0;
         //更新辅助记录信息
         choosed_parent=(choosed_parent+1)%PARENTS_NUM;
-        bigest_class=max_class(population_parents[choosed_parent]);
+        bigest_class=max_class(temp_population[choosed_parent]);
     }
     //剩余结点随机分配
-    if(population_parents[choosed_parent][bigest_class][0]>0){
+    if(temp_population[choosed_parent][bigest_class][0]>0){
         for(i=0;i<num_color;i++){
             temp_color=i;
-            for(j=0;j<population_parents[choosed_parent][temp_color][0];j++){
+            for(j=0;j<temp_population[choosed_parent][temp_color][0];j++){
                 temp_position=j+1;
-                temp_node=population_parents[choosed_parent][temp_color][temp_position];
+                temp_node=temp_population[choosed_parent][temp_color][temp_position];
                 solution_child[temp_node]=rand()%num_color;
             }
         }
@@ -487,8 +488,8 @@ void crossover(int ***population_parents,int main_parent,int *solution_child)
 void updating(int generation)
 {
     int i;
-    int m=-1;
-    int n=-1;
+    int m_bad=-1;//冲突
+    int n_bad=-1;//对应的母本
     //优化子代并替换母本
     for(i=0;i<PARENTS_NUM;i++){
         tabu_search(children[i],&children_conflict[i]);
@@ -506,14 +507,17 @@ void updating(int generation)
     if(generation==BIG_CICLE_NUM){
         //找到当前母本里最差的个体
         for(i=0;i<PARENTS_NUM;i++){
-            if(m<children_conflict[i]){
-                n=i;
-                m=children_conflict[i];
+            if(m_bad<children_conflict[i]){
+                n_bad=i;
+                m_bad=children_conflict[i];
             }
         }
         //替换
-        copy_solution_oneTotwo(parents[n],history_solution);
-        parents_conflict[n]=history_conflict;
+        copy_solution_oneTotwo(parents[n_bad],history_solution);
+        parents_conflict[n_bad]=history_conflict;
+
+        copy_solution_oneToone(history_solution,best_solution);
+        history_conflict=best_conflict;
     }
 }
 //记录结果
@@ -556,9 +560,6 @@ void check_answer(int *solution)
                 printf("\a");
             }
         }
-    }
-    if(1==flag){
-        printf("\a");
     }
 }
 //收尾处理，包括销毁变量以便循环测试
@@ -605,7 +606,6 @@ int main()
             }
             for(j=0;j<PARENTS_NUM;j++){
                 crossover(parents,j,children[j]);
-                ceshi(children[i]);
             }
             updating(generation%BIG_CICLE_NUM+1);
             generation++;
