@@ -2,14 +2,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdbool.h>
 
-#define ITERATION_NUM 8000
 #define TEST_NUM 30
+#define ITERATION_NUM 8000
 #define BIG_CICLE_NUM 10 //大的周期数
 #define PARENTS_NUM 2
+#define MAX_GENERATION 10000
 /***********************************************/
-#define THE_CHOICE 5
-int colors[]={5,17,44,8,28,72,12,50,49,48};
+#define THE_CHOICE 7
+int colors[]={5,17,44,8,28,72,12,50,49,48,47};
 char *instances[]={"dsjc125.1.col",//0_5
                    "dsjc125.5.col",//1_17
                    "dsjc125.9.col",//2_44
@@ -20,6 +22,7 @@ char *instances[]={"dsjc125.1.col",//0_5
                    "dsjc500.5.col",//7_50
                    "dsjc500.5.col",//8_49
                    "dsjc500.5.col",//9_48
+                   "dsjc500.5.col",//10_47
                     };
 char *filename_in;
 char *filename_out;
@@ -36,11 +39,15 @@ int **t_tabu_tenure=NULL;
 int **parents[PARENTS_NUM];
 int *children[PARENTS_NUM];
 int *best_solution;
-int *history_solution;
+//int *history_solution;
+int *elite1_solution;
+int *elite2_solution;
 int parents_conflict[PARENTS_NUM];
 int children_conflict[PARENTS_NUM];
 int best_conflict;
-int history_conflict;
+//int history_conflict;
+int elite1_conflict;
+int elite2_conflict;
 //统计数据
 clock_t run_begin;
 clock_t run_end;
@@ -48,6 +55,7 @@ double run_time;
 int generation;
 time_t m_time;
 struct tm *p_time_struct=NULL;
+bool fail_flag;
 /***********************************************/
 //对输入输出的文件名初始化，方便算例的选择，方便操作
 void initial_program(void)
@@ -82,6 +90,7 @@ void initial_program(void)
     time(&m_time);
     p_time_struct=localtime(&m_time);
     run_begin=clock();
+    fail_flag=false;
     srand((unsigned int)time(NULL));
 }
 //读取图信息，得到邻结点表
@@ -194,7 +203,7 @@ void tabu_search(int *solution,int *conflict_num)
     int delta_nontabu=0;
     int delta_tabu=0;
     int temp_delta;
-    int best_conflict=num_node*num_node;
+    int best_conflict=num_edge;
     int *best_solution=(int *)malloc(sizeof(int)*num_node);
     //初始化变量
     for(i=0;i<num_node;i++){
@@ -292,7 +301,7 @@ void tabu_search(int *solution,int *conflict_num)
             t_conflict_table[t_adjacent_all[temp_node][m+1]][color_after]++;
         }
         t_tabu_tenure[temp_node][color_before]=i+curr_conflict_num+rand()%10;
-        if(curr_conflict_num<best_conflict){
+        if(curr_conflict_num<=best_conflict){
             for(m=0;m<num_node;m++){
                 best_solution[m]=solution[m];
             }
@@ -346,6 +355,21 @@ void copy_solution_twoToone(int *solution,int **new_solution){
         }
     }
 }
+//求解的冲突数
+int solution_conflict(int *solution)
+{
+    int i;
+    int j;
+    int conflict=0;
+    for(i=0;i<num_node;i++){
+        for(j=0;j<t_adjacent_half[i][0];j++){
+            if(solution[i]==solution[t_adjacent_half[i][j+1]]){
+                conflict++;
+            }
+        }
+    }
+    return conflict;
+}
 //初始化种群，记录最优个体
 void initial_populaion(void)
 {
@@ -354,7 +378,7 @@ void initial_populaion(void)
     int *solution=(int *)malloc(sizeof(int)*num_node);
     int record[2];
     record[0]=0;//the best parent
-    record[1]=num_node*num_node;//the best conflict
+    record[1]=num_edge;//the best conflict
     for(i=0;i<PARENTS_NUM;i++){
         parents[i]=(int **)malloc(sizeof(int *)*num_color);
         children[i]=(int *)malloc(sizeof(int)*num_node);
@@ -363,7 +387,9 @@ void initial_populaion(void)
             parents[i][j][0]=0;
         }
     }
-    history_solution=(int *)malloc(sizeof(int)*num_node);
+    //history_solution=(int *)malloc(sizeof(int)*num_node);
+    elite1_solution=(int *)malloc(sizeof(int)*num_node);
+    elite2_solution=(int *)malloc(sizeof(int)*num_node);
     best_solution=(int *)malloc(sizeof(int)*num_node);
     t_conflict_table=(int **)malloc(sizeof(int *)*num_node);
     t_tabu_tenure=(int **)malloc(sizeof(int *)*num_node);
@@ -376,7 +402,8 @@ void initial_populaion(void)
         for(j=0;j<num_node;j++){
             solution[j]=rand()%num_color;
         }
-        tabu_search(solution,&parents_conflict[i]);
+        //tabu_search(solution,&parents_conflict[i]);
+        parents_conflict[i]=solution_conflict(solution);
         copy_solution_oneTotwo(parents[i],solution);
         if(parents_conflict[i]<=0){
             copy_solution_twoToone(best_solution,parents[i]);
@@ -391,8 +418,13 @@ void initial_populaion(void)
     //记录最优解
     copy_solution_twoToone(best_solution,parents[record[0]]);
     best_conflict=parents_conflict[record[0]];
-    copy_solution_twoToone(history_solution,parents[record[0]]);
-    history_conflict=parents_conflict[record[0]];
+    copy_solution_twoToone(elite1_solution,parents[record[0]]);
+    elite1_conflict=parents_conflict[record[0]];
+    //初始化elite2
+    for(i=0;i<num_node;i++){
+        elite2_solution[i]=rand()%num_color;
+    }
+    elite2_conflict=solution_conflict(elite2_solution);
 }
 //返回包含结点数最多的颜色号
 int max_class(int **solution)
@@ -483,21 +515,33 @@ void crossover(int ***population_parents,int main_parent,int *solution_child)
             }
         }
     }
+    //free
+    for(i=0;i<PARENTS_NUM;i++){
+        free(solution_parents[i]);
+        free(node_positionInpopulation_parents[i]);
+        for(j=0;j<num_color;j++){
+            free(temp_population[i][j]);
+        }
+    }
 }
 //save best and replace
 void updating(int generation)
 {
     int i;
-    int m_bad=-1;//冲突
-    int n_bad=-1;//对应的母本
+//    int m_bad=-1;//冲突
+//    int n_bad=-1;//对应的母本
     //优化子代并替换母本
     for(i=0;i<PARENTS_NUM;i++){
         tabu_search(children[i],&children_conflict[i]);
-        if(best_conflict>children_conflict[i]){
-            copy_solution_oneToone(best_solution,children[i]);
-            best_conflict=children_conflict[i];
-            if(best_conflict<=0){
-                return;
+        if(elite1_conflict>children_conflict[i]){
+            copy_solution_oneToone(elite1_solution,children[i]);
+            elite1_conflict=children_conflict[i];
+            if(best_conflict>elite1_conflict){
+                copy_solution_oneToone(best_solution,elite1_solution);
+                best_conflict=elite1_conflict;
+                if(best_conflict<=0){
+                    return;
+                }
             }
         }
         copy_solution_oneTotwo(parents[i],children[i]);
@@ -505,19 +549,26 @@ void updating(int generation)
     }
     //每个大周期结束时用上个大周期的最优解替换现在的一个母本
     if(generation==BIG_CICLE_NUM){
-        //找到当前母本里最差的个体
-        for(i=0;i<PARENTS_NUM;i++){
-            if(m_bad<children_conflict[i]){
-                n_bad=i;
-                m_bad=children_conflict[i];
-            }
-        }
-        //替换
-        copy_solution_oneTotwo(parents[n_bad],history_solution);
-        parents_conflict[n_bad]=history_conflict;
+        //替换第一个母本
+        copy_solution_oneTotwo(parents[0],elite2_solution);
+        parents_conflict[0]=elite2_conflict;
 
-        copy_solution_oneToone(history_solution,best_solution);
-        history_conflict=best_conflict;
+        copy_solution_oneToone(elite2_solution,elite1_solution);
+        elite2_conflict=elite1_conflict;
+
+        elite1_conflict=num_edge;
+//        //找到当前母本里最差的个体
+//        for(i=0;i<PARENTS_NUM;i++){
+//            if(m_bad<children_conflict[i]){
+//                n_bad=i;
+//                m_bad=children_conflict[i];
+//            }
+//        }
+        //替换
+//        copy_solution_oneTotwo(parents[n_bad],history_solution);
+//        parents_conflict[n_bad]=history_conflict;
+//        copy_solution_oneToone(history_solution,best_solution);
+//        history_conflict=best_conflict;
     }
 }
 //记录结果
@@ -543,7 +594,12 @@ void write_file(int *solution)
         exit(-1);
     }
     //记录相关数据，其中最后一项是程序开始运行的年月日时分
-    fprintf(f_run_data,"%d %s %d %.3f %d %04d%02d%02d%02d%02d\n",THE_CHOICE,instances[THE_CHOICE],num_color,run_time,generation,1900+p_time_struct->tm_year,1+p_time_struct->tm_mon,p_time_struct->tm_mday,p_time_struct->tm_hour,p_time_struct->tm_min);//类型(choice)、文件名、颜色数、运行时间、交叉次数、日期时间
+    if(fail_flag==false){
+        fprintf(f_run_data,"%d\t%s\t%d\t%.3f\t%d\t%04d%02d%02d%02d%02d\n",THE_CHOICE,instances[THE_CHOICE],num_color,run_time,generation,1900+p_time_struct->tm_year,1+p_time_struct->tm_mon,p_time_struct->tm_mday,p_time_struct->tm_hour,p_time_struct->tm_min);//类型(choice)、文件名、颜色数、运行时间、交叉次数、日期时间
+    }
+    else{
+        fprintf(f_run_data,"%d\t%s\t%d\t%.3f\t%d\t%04d%02d%02d%02d%02d\t%s\n",THE_CHOICE,instances[THE_CHOICE],num_color,run_time,generation,1900+p_time_struct->tm_year,1+p_time_struct->tm_mon,p_time_struct->tm_mday,p_time_struct->tm_hour,p_time_struct->tm_min,"failed!");//类型(choice)、文件名、颜色数、运行时间、交叉次数、日期时间
+    }
     fclose(f_run_data);
 }
 //对解进行检查，输入解，输出结果
@@ -551,12 +607,10 @@ void check_answer(int *solution)
 {
     int i;
     int j;
-    int flag=1;
     for(i=0;i<num_node;i++){
         for(j=0;j<t_adjacent_half[i][0];j++){
             if(solution[i]==solution[t_adjacent_half[i][j+1]]){
                 printf("%d,%d should not have the same color!\n",i,t_adjacent_half[i][j+1]);
-                flag=0;
                 printf("\a");
             }
         }
@@ -589,7 +643,9 @@ void free_variable(void)
         free(children[i]);
     }
     free(best_solution);
-    free(history_solution);
+//    free(history_solution);
+    free(elite1_solution);
+    free(elite2_solution);
 }
 /***********************************************/
 int main()
@@ -600,7 +656,7 @@ int main()
         initial_program();
         read_file();
         initial_populaion();
-        while(1){
+        while(generation<MAX_GENERATION){
             if(best_conflict<=0){
                 break;
             }
@@ -610,12 +666,17 @@ int main()
             updating(generation%BIG_CICLE_NUM+1);
             generation++;
         }
-        check_answer(best_solution);
+        if(best_conflict<=0){
+            check_answer(best_solution);
+        }
+        else{
+            printf("can not get the answer!\n");
+            fail_flag=true;
+        }
         write_file(best_solution);
-
         free_variable();
         printf("%%%.1f\n",100.0*(i+1)/TEST_NUM);
     }
-    printf("\a\a\a\a\a");
+    printf("%s\a\a\a",instances[THE_CHOICE]);
     return 0;
 }
