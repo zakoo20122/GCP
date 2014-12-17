@@ -290,7 +290,7 @@ void tabu_search(int *solution,int *conflict_num)
             t_conflict_table[t_adjacent_all[temp_node][m+1]][color_after]++;
         }
         t_tabu_tenure[temp_node][color_before]=i+curr_conflict_num+rand()%10;
-        if(curr_conflict_num<best_conflict){
+        if(curr_conflict_num<=best_conflict){
             for(m=0;m<num_node;m++){
                 best_solution[m]=solution[m];
             }
